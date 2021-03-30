@@ -21,19 +21,17 @@ import string
 import types
 import re
 
-SYMCHARS = string.digits + string.uppercase + string.lowercase + '-+*/:&$?='
+SYMCHARS = string.digits + string.ascii_uppercase + string.ascii_lowercase + '-+*/:&$?='
 WS = string.whitespace
 SPECIAL = "()`',@"
 SYNTAX = WS + SPECIAL
 
 # simple conversions that are almost always useful:
 INT = re.compile(r'^[+-]?\d+$')
-LONGINT = re.compile(r'^[+-]?\d+[lL]$')
 FLOAT = re.compile(r'^[+-]?(\d+\.\d*$|\d*\.\d+$)')
 _nummap = {
-    INT: string.atoi,
-    LONGINT: string.atol,
-    FLOAT: string.atof
+    INT: int,
+    FLOAT: float,
     }
 
 
@@ -45,7 +43,7 @@ class Error(Exception): pass
 class Evalable:
     """Evaluatable Lisp object interface."""
     def eval(self, environment, args=None):
-        raise Error, "Unimplemented"
+        raise Error("Unimplemented")
 
 
 _PROPERTIES = {}                        # property list
@@ -54,7 +52,7 @@ class SymbolObject(Evalable):
     # Everything in Lisp is a list of symbols.
     def __init__(self, name):
         self.n = name
-        if not _PROPERTIES.has_key(self.n):
+        if self.n not in _PROPERTIES:
             _PROPERTIES[self.n] = {}
 
     def __repr__(self):
@@ -88,7 +86,7 @@ class StringObject(Evalable):
         self.string = str
 
     def __repr__(self):
-        return `self.string`
+        return repr(self.string)
 
     def eval(self, env, args=None):
         return self.string
@@ -108,27 +106,25 @@ class NumberObject(Evalable):
         self.v = value
 
     def __repr__(self):
-        return `self.v`
+        return repr(self.v)
 
     def eval(self, env, args=None):
         return self
 
-    def __cmp__(self, other):
-#        if isinstance(other, NumberObject) or isinstance(other, LogicObject):
-        if type(self) == type(other):
-            if self.v == other.v:
-                return 0
-            elif self.v > other.v:
-                return 1
-            else:
-                return -1
-        else:
-            if self.v == other:
-                return 0
-            elif self.v > other:
-                return 1
-            else:
-                return -1
+    def __eq__(self, other):
+      return self.v == other
+
+    def __gt__(self, other):
+      return self.v > other
+
+    def __lt__(self, other):
+      return self.v < other
+
+    def __ge__(self, other):
+      return self.v >= other
+
+    def __le__(self, other):
+      return self.v <= other
 
     def __add__(self, other):
         if type(self) == type(other):
@@ -151,12 +147,17 @@ class NumberObject(Evalable):
             return self.v * other
     __rmul__ = __mul__
 
-    def __div__(self, other):
+    def __truediv__(self, other):
         if type(self) == type(other):
             return NumberObject(self.v / other.v)
         else:
             return self.v / other
-    __rdiv__ = __div__
+
+    def __floordiv__(self, other):
+        if type(self) == type(other):
+            return NumberObject(self.v // other.v)
+        else:
+            return self.v // other
 
     def __mod__(self, other):
         if type(self) == type(other):
@@ -187,22 +188,20 @@ class LogicObject(Evalable):
         else:
             return "(logic %s)" % self.v
 
-    def __cmp__(self, other):
-        #if type(self) == type(other):
-        if isinstance(other, LogicObject):
-            if self.v == other.v:
-                return 0
-            elif self.v > other.v:
-                return 1
-            else:
-                return -1
-        else:
-            if self.v == other:
-                return 0
-            elif self.v > other:
-                return 1
-            else:
-                return -1
+    def __eq__(self, other):
+      return self.v == other
+
+    def __gt__(self, other):
+      return self.v > other
+
+    def __lt__(self, other):
+      return self.v < other
+
+    def __ge__(self, other):
+      return self.v >= other
+
+    def __le__(self, other):
+      return self.v <= other
 
     def __neg__(self):
         return LogicObject(1.0 - self.v)
@@ -344,7 +343,7 @@ class ListObject(Evalable):
            isinstance(fn, SyntaxObject):
             return fn.eval(env, self.list[1:])
         else:
-            raise Error, "%s is not applyable" % fn
+            raise Error("%s is not applyable" % fn)
 
     def nullp(self):
         if len(self.list) == 0:
@@ -360,10 +359,10 @@ class ListObject(Evalable):
         while i < length:
             if isinstance(self.list[i], ListObject):
                 answer.append(self.list[i].iquote(env))
-            elif type(self.list[i]) == types.StringType:
+            elif type(self.list[i]) == str:
                 if self.list[i] == ',':
                     i = i + 1
-                    if type(self.list[i]) == types.StringType:
+                    if type(self.list[i]) == str:
                         if self.list[i] == '@':
                             # splice: `(a b ,@fred) -> (a b a b c)
                             i = i + 1
@@ -390,7 +389,7 @@ class ListObject(Evalable):
                     if key == item:
                         return pair.second()
             else:
-                raise Error, "assoc: second argument must be list of lists/pairs"
+                raise Error("assoc: second argument must be list of lists/pairs")
 
         return FALSE
 
@@ -650,7 +649,7 @@ class Reader:
             #print "\tTOK:", tok, "\t", self.i, self.len
             # If the thing is a number, convert it.
             numeric = 0
-            for number in INT, LONGINT, FLOAT:
+            for number in INT, FLOAT:
                 n = number.match(tok)
                 if n:
                     tok = NumberObject(_nummap[number](tok))
@@ -671,7 +670,7 @@ class Reader:
         expr = None
         tok = self.get_token()
         if tok == ')':
-            raise Error, "Unexpected ')'"
+            raise Error("Unexpected ')'")
         elif tok == "(":
             expr = []
             tok = self.get_token()
@@ -685,7 +684,7 @@ class Reader:
                 elif tok == "`":
                     expr.append(ListObject([IQUOTE, self.get_sexpr()]))
                 elif tok == None:
-                    raise Error, "unexpected end of expression"
+                    raise Error("unexpected end of expression")
                 else:
                     expr.append(tok)
 
@@ -728,7 +727,7 @@ class Environment:
         until it gets to the top-level environment.
         """
         #print "SET(%i):" % self.level, sym, value
-        if self.e.has_key(sym):
+        if sym in self.e:
             self.e[sym] = value
         elif self.parent:
             self.parent.set(sym, value)
@@ -741,12 +740,12 @@ class Environment:
         self.e[sym] = value
 
     def get(self, sym):
-        if not self.e.has_key(sym):
+        if sym not in self.e:
             # Consult the parent environment if the symbol isn't here.
             if self.parent:
                 return self.parent.get(sym)
             else:
-                raise UnboundSymbolError, sym
+                raise UnboundSymbolError(sym)
         else:
             #print "GET(%i)" % self.level, sym, self.e[sym]
             return self.e[sym]
@@ -761,14 +760,14 @@ class Environment:
 
     def __repr__(self):
         s = "\nLevel %s:\n" % self.level
-        keys = self.e.keys()
+        keys = list(self.e.keys())
         keys.sort()
         for key in keys:
             if key != "*env*":
                 s = s + " %10s: %s\n" % (key, self.e[key])
 
         if self.parent:
-            return s + `self.parent`# + s
+            return s + repr(self.parent)# + s
         else:
             return s
 
@@ -906,7 +905,7 @@ class Lisper:
         return self.e.get(sym, UnboundSymbolError)
 
     def set(self, sym, propery, value):
-        if not _PROPERTIES.has_key(sym):
+        if sym not in _PROPERTIES:
             _PROPERTIES[sym] = {}
 
         _PROPERTIES[sym][property] = value
@@ -995,7 +994,7 @@ class Lisper:
                 while sexpr:
                     self.stdout.write("\t%s\n" % self.eval(sexpr))
                     sexpr = self.r.get_sexpr()
-            except UnboundSymbolError, e:
+            except UnboundSymbolError as e:
                 self.stderr.write("ERROR: unbound symbol '%s'\n" % e.args[0])
             except:
                 import traceback, sys
@@ -1185,7 +1184,7 @@ class Lisper:
         for arg in args[1:]:
             ans = ans | arg.eval(env)
             # Short circuit once truth is known.
-            if ans.v >= truth:
+            if ans.v >= truth.v:
                 break
 
         return ans
@@ -1263,14 +1262,14 @@ class Lisper:
         if isinstance(form, LambdaObject) or isinstance(form, MacroObject):
             return form.env
         else:
-            raise Error, "get-environment: must take lambda or macro"
+            raise Error("get-environment: must take lambda or macro")
 
     def do_env_get(self, env, args):
         envform = args[0].eval(env)
         if isinstance(envform, Environment):
             return envform.get(args[1].eval(env).n)
         else:
-            raise Error, "env-get: must get environment as first argument"
+            raise Error("env-get: must get environment as first argument")
 
     def do_env_set(self, env, args):
         envform = args[0].eval(env)
@@ -1279,7 +1278,7 @@ class Lisper:
             envform.set(args[1].eval(env).n, value)
             return value
         else:
-            raise Error, "env-set: must get environment as first argument"
+            raise Error("env-set: must get environment as first argument")
 
     def do_put(self, env, args):
         val = args[2].eval(env)
@@ -1307,10 +1306,10 @@ class Lisper:
         fmt = args[0].eval(env)
         if isinstance(fmt, StringObject):
             return fmt.string % tuple(eargs)
-        elif type(fmt) == types.StringType:
+        elif type(fmt) == str:
             return fmt % tuple(eargs)
         else:
-            raise Error, "py-format: format must be a string"
+            raise Error("py-format: format must be a string")
 
     def do_py_type(self, env, args):
         """(py-type o) - try to convert object o into its Python value"""
@@ -1390,7 +1389,7 @@ class Lisper:
                 arglist.append(b.first())
                 vallist.append(b.second())
             else:
-                raise Error, "malformed (let ...)"
+                raise Error("malformed (let ...)")
 
         # Pull the whole mess together into the lambda form, then eval.
         return ListObject([ListObject([SymbolObject('lambda'), 
@@ -1495,11 +1494,11 @@ class Lisper:
         # Set up the new environment.
         self.push_e()
         # Intern the new values.
-        for (key, value) in hsh.items():
-            if type(value) == types.StringType:
+        for (key, value) in list(hsh.items()):
+            if type(value) == str:
                 self.intern(key, value)
             else:
-                self.intern(key, self.r.get_sexpr(`value`))
+                self.intern(key, self.r.get_sexpr(repr(value)))
 
         # Eval the code.
         for code in args[1:]:
@@ -1603,7 +1602,7 @@ if __name__ == '__main__':
                   ]
     l = Lisper()
     for test in eval_tests:
-        print test, ":", l.eval(g.get_sexpr(test))
+        print(test, ":", l.eval(g.get_sexpr(test)))
 
     l.repl()
 
